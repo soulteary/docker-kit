@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/soulteary/docker-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/soulteary/docker-kit/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/soulteary/docker-kit.svg)](https://pkg.go.dev/github.com/soulteary/docker-kit)
+[![Go Report Card](.github/goreportcard.svg)](.github/goreportcard-report.md)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 Drive the docker CLI from Go: run commands, read what a container was actually created with, and report where that has drifted from what the configuration now says. Zero dependencies.
 
@@ -131,6 +133,57 @@ facts, err := r.Inspect(ctx, "app")
 ```
 
 `Runner.Binary` also points the package at a compatible CLI such as `podman`.
+
+## Requirements
+
+- **Go 1.27+** (`go.mod` declares `go 1.27.0`)
+- **No dependencies.** The standard library is the whole of it, tests included.
+- **The `docker` CLI on PATH** at run time — this package drives it rather than
+  speaking to the daemon's API. `Runner.Binary` points at a different
+  executable; `Runner.Exec` replaces execution entirely, which is how the tests
+  run without a daemon.
+- **Unix only.** `SocketGID` reads POSIX ownership through `syscall.Stat_t`, so
+  the package does not build on Windows.
+
+## Test Coverage
+
+```bash
+go test ./... -v
+
+# With coverage — what CI runs
+go test -race -coverprofile=coverage.out -covermode=atomic ./...
+go tool cover -html=coverage.out -o coverage.html
+go tool cover -func=coverage.out
+```
+
+Statement coverage is **92.6%**, and no test needs a docker daemon — they go
+through `Runner.Exec`. CI uploads the browsable HTML report as a build artifact
+on every run; no coverage service is involved.
+
+The runnable examples in `example_test.go` are part of the suite. They are an
+*external* test package (`package dockerkit_test`), so they compile only
+against the exported API — which keeps that API honest about being usable from
+outside — and `go test` checks their printed output, so they cannot drift from
+what the docs claim.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
+## Security
+
+Access to the docker daemon is root on the host, a `Spec` becomes a command
+line, and diffs and errors carry values verbatim — which is what `EnvSet` is
+for. [SECURITY.md](SECURITY.md) explains each of those, and how to report a
+vulnerability — please do not open a public issue for one.
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 
