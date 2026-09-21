@@ -27,11 +27,10 @@ disclosing publicly.
 
 | Version | Supported |
 | ------- | --------- |
-| `main`  | ✅ |
+| 1.x     | ✅ |
 
-Nothing is tagged yet, so `go get` resolves to a pseudo-version of `main`, and
-that is the only thing fixes land on. Once there is a `v1`, fixes will land on
-the latest minor of the current major. There are no long-term support branches.
+Fixes land on the latest minor of the current major. There are no long-term
+support branches. Until `v1.0.0` is tagged, `main` is that version.
 
 ## What this library does, and what it does not
 

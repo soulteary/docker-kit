@@ -620,3 +620,71 @@ func TestRunUsesTheInjectedExec(t *testing.T) {
 		t.Fatalf("args = %v", gotArgs)
 	}
 }
+
+// --- the package-level helpers ---
+
+// Run, Inspect and ImageID without a receiver are what most callers reach for,
+// and they are only as good as the Default they delegate to. Default is a var
+// so it can be pointed at a fake; this pins that it actually is the one they
+// use.
+func TestPackageLevelHelpersDelegateToDefault(t *testing.T) {
+	original := Default
+	t.Cleanup(func() { Default = original })
+
+	var calls [][]string
+	Default = Runner{Exec: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name != "docker" {
+			t.Errorf("binary = %q, want %q", name, "docker")
+		}
+		calls = append(calls, args)
+		switch args[0] {
+		case "inspect":
+			return []byte(`[{"Image":"sha256:abc",
+			                 "State":{"Status":"running","Running":true},
+			                 "Config":{"Image":"app:v2"}}]`), nil
+		case "image":
+			return []byte("sha256:abc\n"), nil
+		default:
+			return []byte("delegated"), nil
+		}
+	}}
+
+	ctx := context.Background()
+
+	out, err := Run(ctx, "ps", "-a")
+	if err != nil || string(out) != "delegated" {
+		t.Errorf("Run() = (%q, %v), want (%q, nil)", out, err, "delegated")
+	}
+
+	facts, err := Inspect(ctx, "app")
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+	if facts == nil || facts.ImageRef != "app:v2" || !facts.Running {
+		t.Errorf("Inspect() = %+v, want the running app:v2 container", facts)
+	}
+
+	if id := ImageID(ctx, "app:v2"); id != "sha256:abc" {
+		t.Errorf("ImageID() = %q, want %q", id, "sha256:abc")
+	}
+
+	want := [][]string{
+		{"ps", "-a"},
+		{"inspect", "app"},
+		{"image", "inspect", "-f", "{{.Id}}", "app:v2"},
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Errorf("commands run = %v, want %v", calls, want)
+	}
+}
+
+// Restoring Default must actually restore it, or every later test in the
+// package silently runs against whatever the previous one installed.
+func TestDefaultIsTheZeroRunner(t *testing.T) {
+	if Default.Exec != nil {
+		t.Error("Default.Exec is set; a test leaked its fake")
+	}
+	if Default.Binary != "" {
+		t.Errorf("Default.Binary = %q, want empty", Default.Binary)
+	}
+}
