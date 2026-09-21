@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [ main, develop ]
 
-
 jobs:
   # Code formatting check
   fmt:
@@ -61,14 +60,8 @@ jobs:
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
 
-      - name: Generate coverage report
-        run: go tool cover -html=coverage.out -o coverage.html
-
-
       - name: Display coverage summary
         run: go tool cover -func=coverage.out
-
-          fail_ci_if_error: false
 
   # Code quality check (using golangci-lint)
   lint:
