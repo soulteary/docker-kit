@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/soulteary/docker-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/soulteary/docker-kit/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/soulteary/docker-kit.svg)](https://pkg.go.dev/github.com/soulteary/docker-kit)
+[![Go Report Card](.github/goreportcard.svg)](.github/goreportcard-report.md)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 用 Go 驱动 docker CLI：执行命令、读出容器**实际**是按什么参数创建的，并报告它与当前配置之间的差异。零依赖。
 
@@ -130,6 +132,55 @@ facts, err := r.Inspect(ctx, "app")
 ```
 
 `Runner.Binary` 还能把本包指向兼容的 CLI，比如 `podman`。
+
+## 要求
+
+- **Go 1.27+**（`go.mod` 中声明 `go 1.27.0`）
+- **零依赖。** 连测试在内，全部只用标准库。
+- 运行时需要 **PATH 上有 `docker` 命令** —— 本包驱动的是 CLI，而不是去调用
+  daemon 的 API。`Runner.Binary` 可以指向另一个可执行文件；`Runner.Exec` 则
+  直接替换掉执行本身，测试正是靠它在没有 daemon 的情况下跑起来的。
+- **仅限 Unix。** `SocketGID` 通过 `syscall.Stat_t` 读取 POSIX 属主信息，因此
+  本包在 Windows 上无法编译。
+
+## 测试覆盖率
+
+```bash
+go test ./... -v
+
+# 带覆盖率 —— CI 实际执行的命令
+go test -race -coverprofile=coverage.out -covermode=atomic ./...
+go tool cover -html=coverage.out -o coverage.html
+go tool cover -func=coverage.out
+```
+
+语句覆盖率为 **92.6%**，且没有一个测试需要 docker daemon —— 它们都走
+`Runner.Exec`。CI 每次运行都会把可浏览的 HTML 报告作为构建产物上传；不接入
+任何覆盖率服务。
+
+`example_test.go` 里的可运行示例是测试套件的一部分。它们是*外部*测试包
+（`package dockerkit_test`），只能编译到导出的 API —— 这能逼着这套 API 对包外
+调用者保持可用 —— 而且 `go test` 会校验它们打印的输出，因此示例不会与文档
+所述发生偏移。
+
+## 变更日志
+
+见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 安全
+
+能访问 docker daemon 就等于拿到宿主机的 root；`Spec` 最终会变成一条命令行；
+diff 和 error 会原样带出取值 —— 而这正是 `EnvSet` 存在的理由。
+[SECURITY.md](SECURITY.md) 逐条解释了这些，以及如何上报安全问题 —— 请不要为
+安全问题开公开 issue。
+
+## 贡献
+
+1. Fork 本仓库
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add some amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 提交 Pull Request
 
 ## 许可证
 

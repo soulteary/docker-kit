@@ -71,41 +71,81 @@ func (l Limits) UpdateArgs(name string) []string {
 // Validate rejects values docker would reject, so the error arrives while the
 // configuration is being read rather than at `docker create` time -- by which
 // point the message has lost all trace of which setting caused it.
+//
+// The checks are split into one function each, in the order a reader would
+// apply them: every field on its own first, then the one rule that spans two
+// fields. Written as a single function it is over gocyclo's threshold, and the
+// cross-field rule at the end is the part worth reading.
 func (l Limits) Validate() error {
-	if v := strings.TrimSpace(l.CPUs); v != "" {
-		// The regexp rejects forms ParseFloat accepts but docker does not,
-		// such as "1e3" and "NaN"; ParseFloat then checks the value is
-		// positive.
-		f, err := strconv.ParseFloat(v, 64)
-		if !cpusRe.MatchString(v) || err != nil || f <= 0 {
-			return fmt.Errorf("cpus must be a positive number such as \"2\" or \"1.5\", got %q", l.CPUs)
-		}
+	if err := l.validateCPUs(); err != nil {
+		return err
 	}
+	if err := l.validateSizes(); err != nil {
+		return err
+	}
+	if err := l.validatePidsLimit(); err != nil {
+		return err
+	}
+	return l.validateSwapTotal()
+}
+
+// validateCPUs checks --cpus.
+//
+// The regexp rejects forms ParseFloat accepts but docker does not, such as
+// "1e3" and "NaN"; ParseFloat then checks the value is positive.
+func (l Limits) validateCPUs() error {
+	v := strings.TrimSpace(l.CPUs)
+	if v == "" {
+		return nil
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if !cpusRe.MatchString(v) || err != nil || f <= 0 {
+		return fmt.Errorf("cpus must be a positive number such as \"2\" or \"1.5\", got %q", l.CPUs)
+	}
+	return nil
+}
+
+// validateSizes checks that --memory and --memory-swap are docker sizes.
+func (l Limits) validateSizes() error {
 	if v := strings.TrimSpace(l.Memory); v != "" && !sizeRe.MatchString(v) {
 		return fmt.Errorf("memory must be a docker size such as \"512m\" or \"4g\", got %q", l.Memory)
 	}
 	if v := strings.TrimSpace(l.MemorySwap); v != "" && v != "-1" && !sizeRe.MatchString(v) {
 		return fmt.Errorf("memory_swap must be a docker size or \"-1\", got %q", l.MemorySwap)
 	}
+	return nil
+}
+
+// validatePidsLimit checks --pids-limit. Positive applies a cap, -1 means
+// unlimited, 0 means "not set"; anything below -1 is meaningless.
+func (l Limits) validatePidsLimit() error {
 	if l.PidsLimit < -1 {
 		return fmt.Errorf("pids_limit must be positive or -1 (unlimited), got %d", l.PidsLimit)
 	}
+	return nil
+}
 
+// validateSwapTotal checks the one rule that spans two fields.
+//
+// memory-swap is the total of memory plus swap, so it can never be the smaller
+// of the two. Reading it as "how much swap" and setting it below memory is the
+// usual mistake, and docker only says so at create time.
+func (l Limits) validateSwapTotal() error {
 	memory := strings.TrimSpace(l.Memory)
 	swap := strings.TrimSpace(l.MemorySwap)
+
 	if swap != "" && memory == "" {
 		return fmt.Errorf("memory_swap requires memory to be set as well; docker refuses to create the container otherwise")
 	}
-	// memory-swap is the total of memory plus swap, so it can never be the
-	// smaller of the two. Reading it as "how much swap" and setting it below
-	// memory is the usual mistake, and docker only says so at create time.
-	if swap != "" && swap != "-1" && memory != "" {
-		memBytes, memErr := ParseSize(memory)
-		swapBytes, swapErr := ParseSize(swap)
-		if memErr == nil && swapErr == nil && swapBytes < memBytes {
-			return fmt.Errorf("memory_swap (%s) cannot be smaller than memory (%s): it is the total of memory plus swap, and docker refuses to create the container",
-				l.MemorySwap, l.Memory)
-		}
+	if swap == "" || swap == "-1" || memory == "" {
+		return nil
+	}
+
+	memBytes, memErr := ParseSize(memory)
+	swapBytes, swapErr := ParseSize(swap)
+	if memErr == nil && swapErr == nil && swapBytes < memBytes {
+		return fmt.Errorf("memory_swap (%s) cannot be smaller than memory (%s): it is the total of memory plus swap, and docker refuses to create the container",
+			l.MemorySwap, l.Memory)
 	}
 	return nil
 }

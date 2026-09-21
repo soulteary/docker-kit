@@ -1,11 +1,3 @@
-// Package dockerkit drives the docker CLI: running commands, reading what a
-// container was actually created with, and reporting where that has drifted
-// from what the configuration now says it should be.
-//
-// It shells out to `docker` rather than speaking to the daemon's API, and has
-// no dependencies beyond the standard library. That is a deliberate trade: a
-// tool that already requires the docker CLI on the host pays nothing extra,
-// and gets error messages operators can reproduce by pasting the command.
 package dockerkit
 
 import (
