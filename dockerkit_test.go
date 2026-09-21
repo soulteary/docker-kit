@@ -1,8 +1,10 @@
 package dockerkit
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
@@ -73,7 +75,7 @@ func TestUnrecoverableStart(t *testing.T) {
 func TestErrorCarriesOutputAndHint(t *testing.T) {
 	base := errors.New("exit status 1")
 
-	err := Error("docker create", []byte("boom"), base)
+	err := WrapError("docker create", []byte("boom"), base)
 	if !strings.Contains(err.Error(), "boom") {
 		t.Errorf("error should carry the output: %v", err)
 	}
@@ -84,13 +86,13 @@ func TestErrorCarriesOutputAndHint(t *testing.T) {
 		t.Error("an ordinary failure should not carry the daemon-access hint")
 	}
 
-	err = Error("docker ps", []byte("permission denied"), base)
+	err = WrapError("docker ps", []byte("permission denied"), base)
 	if !strings.Contains(err.Error(), AccessHint) {
 		t.Errorf("a daemon-access failure should carry the hint: %v", err)
 	}
 
 	// An empty body with a non-zero status is itself informative.
-	err = Error("docker rm", nil, base)
+	err = WrapError("docker rm", nil, base)
 	if !strings.Contains(err.Error(), "(no output)") {
 		t.Errorf("empty output should be stated, got %v", err)
 	}
@@ -686,5 +688,112 @@ func TestDefaultIsTheZeroRunner(t *testing.T) {
 	}
 	if Default.Binary != "" {
 		t.Errorf("Default.Binary = %q, want empty", Default.Binary)
+	}
+}
+
+// The point of CommandError: a caller that receives an error can ask the
+// classifiers what kind of failure it was, instead of matching on message text
+// this package is free to reword.
+func TestCommandErrorKeepsTheOutputReachable(t *testing.T) {
+	base := errors.New("exit status 1")
+	out := []byte("Error response from daemon: could not find network app-net")
+
+	err := WrapError("docker start", out, base)
+
+	var cmdErr *CommandError
+	if !errors.As(err, &cmdErr) {
+		t.Fatalf("errors.As did not reach *CommandError, got %T", err)
+	}
+	if cmdErr.Op != "docker start" {
+		t.Errorf("Op = %q, want %q", cmdErr.Op, "docker start")
+	}
+	if !bytes.Equal(cmdErr.Output, out) {
+		t.Errorf("Output = %q, want it verbatim", cmdErr.Output)
+	}
+	if !UnrecoverableStart(cmdErr.Output) {
+		t.Error("the classifiers should work on the output carried by the error")
+	}
+	if !errors.Is(err, base) {
+		t.Error("Unwrap should reach the cause")
+	}
+}
+
+// Inspect's error path has to carry a CommandError too, or the reachability
+// above is only true for errors the caller built itself.
+func TestInspectFailureCarriesACommandError(t *testing.T) {
+	docker := Runner{Exec: func(context.Context, string, ...string) ([]byte, error) {
+		return []byte("permission denied while trying to connect to the Docker daemon socket"),
+			errors.New("exit status 1")
+	}}
+
+	_, err := docker.Inspect(context.Background(), "app")
+
+	var cmdErr *CommandError
+	if !errors.As(err, &cmdErr) {
+		t.Fatalf("errors.As did not reach *CommandError, got %T", err)
+	}
+	if !PermissionDenied(cmdErr.Output) {
+		t.Error("the daemon-access failure should be classifiable from the error")
+	}
+}
+
+// The map has to shrink again. A supervisor whose container names change over
+// time -- a job id, a timestamp -- would otherwise hold one mutex per name it
+// ever saw for the life of the process.
+func TestLocksDoNotGrowWithoutBound(t *testing.T) {
+	var locks Locks
+
+	for i := range 1000 {
+		locks.Lock(fmt.Sprintf("job-%d", i))()
+	}
+
+	locks.mu.Lock()
+	n := len(locks.entries)
+	locks.mu.Unlock()
+
+	if n != 0 {
+		t.Errorf("%d entries left behind after every lock was released, want 0", n)
+	}
+}
+
+// An entry must survive while someone is still waiting for it, which is the
+// reason the reference is counted before the entry mutex is taken.
+func TestLocksKeepAnEntryAliveWhileItIsContended(t *testing.T) {
+	var locks Locks
+	var ordered []string
+	var mu sync.Mutex
+
+	release := locks.Lock("app")
+
+	waiting := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		close(waiting)
+		defer locks.Lock("app")()
+		mu.Lock()
+		ordered = append(ordered, "second")
+		mu.Unlock()
+		close(done)
+	}()
+
+	<-waiting
+	runtime.Gosched()
+
+	mu.Lock()
+	ordered = append(ordered, "first")
+	mu.Unlock()
+	release()
+
+	<-done
+
+	if !reflect.DeepEqual(ordered, []string{"first", "second"}) {
+		t.Errorf("order = %v, want the holder before the waiter", ordered)
+	}
+
+	locks.mu.Lock()
+	n := len(locks.entries)
+	locks.mu.Unlock()
+	if n != 0 {
+		t.Errorf("%d entries left behind, want 0", n)
 	}
 }

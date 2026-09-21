@@ -104,23 +104,60 @@ func UnrecoverableStart(out []byte) bool {
 		strings.Contains(lower, "failed to get network")
 }
 
-// Error wraps a failed docker command with its output and, when the failure is
-// a daemon-access problem, with the hint that actually resolves it.
+// CommandError is a failed docker command, carrying the output docker produced
+// alongside the underlying error.
+//
+// The output is a field rather than only a fragment of the message because the
+// classifiers -- [NotFound], [PermissionDenied], [UnrecoverableStart] -- all
+// take the raw output, and a caller that receives an error usually wants to
+// ask one of them what kind of failure it is. Folding the output into a string
+// leaves string matching as the only way to find out, on text this package is
+// free to reword.
+//
+//	var cmdErr *dockerkit.CommandError
+//	if errors.As(err, &cmdErr) && dockerkit.UnrecoverableStart(cmdErr.Output) {
+//		// recreate the container rather than retrying the start
+//	}
+type CommandError struct {
+	// Op is what was attempted, e.g. "docker inspect".
+	Op string
+
+	// Output is docker's combined output, verbatim and untrimmed. It can
+	// contain registry credentials, mount paths and environment values --
+	// see SECURITY.md.
+	Output []byte
+
+	// Err is the error the command failed with, usually an *exec.ExitError.
+	Err error
+}
+
+// Error renders the operation, docker's output and the underlying error.
 //
 // An error that says only "exit status 1" costs the reader a round trip to the
 // host to find out what docker said. The output is the diagnosis; carry it.
-func Error(op string, out []byte, err error) error {
-	trimmed := strings.TrimSpace(string(out))
+func (e *CommandError) Error() string {
+	trimmed := strings.TrimSpace(string(e.Output))
 	if trimmed == "" {
 		// An empty body with a non-zero status is itself informative: it
 		// usually means the process was killed rather than having failed.
 		trimmed = "(no output)"
 	}
-	if PermissionDenied(out) {
-		return fmt.Errorf("%s failed (cannot reach the docker daemon). %s. output: %s: %w",
-			op, AccessHint, trimmed, err)
+	if PermissionDenied(e.Output) {
+		return fmt.Sprintf("%s failed (cannot reach the docker daemon). %s. output: %s: %v",
+			e.Op, AccessHint, trimmed, e.Err)
 	}
-	return fmt.Errorf("%s failed. output: %s: %w", op, trimmed, err)
+	return fmt.Sprintf("%s failed. output: %s: %v", e.Op, trimmed, e.Err)
+}
+
+// Unwrap returns the underlying error, so errors.Is and errors.As reach it.
+func (e *CommandError) Unwrap() error { return e.Err }
+
+// WrapError wraps a failed docker command as a [CommandError].
+//
+// When the failure is a daemon-access problem the rendered message also
+// carries [AccessHint], which is the hint that actually resolves it.
+func WrapError(op string, out []byte, err error) error {
+	return &CommandError{Op: op, Output: out, Err: err}
 }
 
 // AccessHint is appended to daemon-access errors. It is a variable so a caller
@@ -155,16 +192,51 @@ func SocketGID(path string) int {
 // delete the container the other just created. A name collision is a logged
 // annoyance; this is a container that silently isn't there.
 type Locks struct {
-	mu sync.Map // name -> *sync.Mutex
+	mu      sync.Mutex
+	entries map[string]*lockEntry
+}
+
+// lockEntry is one name's mutex, plus the number of callers currently holding
+// or waiting for it. The count is what lets the entry be removed again: a
+// supervisor whose container names change over time -- a job id, a timestamp
+// -- would otherwise accumulate one mutex per name it ever saw, for the life
+// of the process.
+type lockEntry struct {
+	mu   sync.Mutex
+	refs int
 }
 
 // Lock takes the lock for name and returns the function that releases it,
 // so callers can write:
 //
 //	defer locks.Lock(name)()
+//
+// The returned function must be called exactly once, like sync.Mutex.Unlock.
 func (l *Locks) Lock(name string) func() {
-	v, _ := l.mu.LoadOrStore(name, &sync.Mutex{})
-	mu := v.(*sync.Mutex)
-	mu.Lock()
-	return mu.Unlock
+	l.mu.Lock()
+	if l.entries == nil {
+		l.entries = make(map[string]*lockEntry)
+	}
+	e, ok := l.entries[name]
+	if !ok {
+		e = &lockEntry{}
+		l.entries[name] = e
+	}
+	// Counted before the entry mutex is taken, so a caller waiting on it keeps
+	// the entry alive while the current holder releases.
+	e.refs++
+	l.mu.Unlock()
+
+	e.mu.Lock()
+
+	return func() {
+		e.mu.Unlock()
+
+		l.mu.Lock()
+		e.refs--
+		if e.refs == 0 {
+			delete(l.entries, name)
+		}
+		l.mu.Unlock()
+	}
 }

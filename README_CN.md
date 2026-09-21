@@ -85,9 +85,16 @@ diffs := spec.Drift(facts, imageID)     // 哪里不再匹配
 | `NotFound(out)` | 没有这个容器（覆盖多语言输出） |
 | `PermissionDenied(out)` | 连不上 daemon：socket 权限，或根本没在监听 |
 | `UnrecoverableStart(out)` | `docker start` 失败且重试永远修不好 —— 多为 `compose down` 删掉了网络。必须删掉重建；一味重试的调用方会永远重试下去 |
-| `Error(op, out, err)` | 把失败**连同输出**一起包装，必要时附上 daemon 访问提示 |
+| `WrapError(op, out, err)` | 把失败包装成 `*CommandError`，**带上它的输出**，必要时再附上访问提示 |
 
-`Error` 一定带上输出：只说 `exit status 1` 的错误，会让读它的人多跑一趟宿主机去看 docker 究竟说了什么。
+`CommandError` 把输出保留为字段，而不是只揉进消息里。只说 `exit status 1` 的错误，会让读它的人多跑一趟宿主机去看 docker 究竟说了什么 —— 而且拿到错误的调用方通常还想用上面那几个分类函数问一句「这是哪种失败」，那需要的是原始字节，不是一句话：
+
+```go
+var cmdErr *dockerkit.CommandError
+if errors.As(err, &cmdErr) && dockerkit.UnrecoverableStart(cmdErr.Output) {
+    // 重建容器，而不是反复重试 start
+}
+```
 
 ## 资源上限
 
@@ -141,9 +148,9 @@ facts, err := r.Inspect(ctx, "app")
 
 ## 要求
 
-- **Go 1.22+**（`go.mod` 中声明 `go 1.22.0`）。本包没有任何地方需要更新的工具链，
-  而库的 `go` 指令对所有导入方都是硬性下限，所以压到代码允许的最低。CI 会同时
-  用 1.22 和当前发行版跑测试。
+- **Go 1.27+**（`go.mod` 中声明 `go 1.27.0`）。几个 kit 一起跟随当前 Go 发行版，
+  所以这是有意选定的下限，而不是代码能跑的最低版本。注意：库的 `go` 指令对所有
+  导入方都是硬性下限 —— `go get` 会把你自己的 `go.mod` 顶上来。
 - **零依赖。** 连测试在内，全部只用标准库。
 - 运行时需要 **PATH 上有 `docker` 命令** —— 本包驱动的是 CLI，而不是去调用
   daemon 的 API。`Runner.Binary` 可以指向另一个可执行文件；`Runner.Exec` 则
@@ -162,8 +169,8 @@ go tool cover -html=coverage.out -o coverage.html
 go tool cover -func=coverage.out
 ```
 
-语句覆盖率为 **93.2%**，且没有一个测试需要 docker daemon —— 它们都走
-`Runner.Exec`。测试任务会在 Linux 和 macOS 上、用 Go 1.22 和当前发行版各跑一遍；
+语句覆盖率为 **94.2%**，且没有一个测试需要 docker daemon —— 它们都走
+`Runner.Exec`。测试任务会在 Linux 和 macOS 上、用 Go 1.27 和当前发行版各跑一遍；
 其中一个组合会把可浏览的 HTML 报告作为构建产物上传。不接入任何覆盖率服务。
 
 `example_test.go` 里的可运行示例是测试套件的一部分。它们是*外部*测试包

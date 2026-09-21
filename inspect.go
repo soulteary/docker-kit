@@ -67,7 +67,7 @@ func (r Runner) Inspect(ctx context.Context, name string) (*Facts, error) {
 		if NotFound(out) {
 			return nil, nil
 		}
-		return nil, Error("docker inspect", out, err)
+		return nil, WrapError("docker inspect", out, err)
 	}
 	return ParseInspect(out)
 }

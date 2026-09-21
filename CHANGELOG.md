@@ -15,11 +15,11 @@ that motivated `Spec.Drift` was a container still mounting the host's docker
 socket long after the setting was changed to stop it: the isolation the edit
 was meant to achieve never happened, and everything looked fine.
 
-**Requires Go 1.22 or newer, the `docker` CLI on PATH at run time, and Unix.**
-A library's `go` directive is a hard floor for everyone who imports it, so it
-is kept as low as the code allows rather than tracking the newest toolchain.
-`SocketGID` reads POSIX ownership through `syscall.Stat_t`, so the package does
-not build on Windows.
+**Requires Go 1.27 or newer, the `docker` CLI on PATH at run time, and Unix.**
+The kits track the current Go release together. Note that a library's `go`
+directive is a hard minimum for everyone who imports it: `go get` raises the
+consumer's own `go.mod` to match. `SocketGID` reads POSIX ownership through
+`syscall.Stat_t`, so the package does not build on Windows.
 
 ### What 1.0.0 provides
 
@@ -40,13 +40,31 @@ not build on Windows.
   `Runner.Exec` to replace execution entirely; `Default` and the package-level
   `Run`, `Inspect` and `ImageID` that delegate to it.
 - Output classification — `NotFound`, `PermissionDenied`, `UnrecoverableStart`
-  — and `Error`, which carries docker's output rather than just "exit status 1".
+  — and `WrapError`, which wraps a failure as a `CommandError` carrying
+  docker's output rather than just "exit status 1".
 - `Limits` with `Args`, `UpdateArgs` and `Validate`, which rejects what docker
   would only reject at `docker create` time; `ParseSize`.
 - `Locks` to serialize lifecycle operations per container name, and
   `ImageIDCache` to keep `docker image inspect` off a status page's hot path.
 
+### Settled before the release
+
+- **`Error(op, out, err)` is now `WrapError`, returning `*CommandError`.** The
+  old function folded docker's output into a message string and returned a bare
+  `error`, so a caller holding one could not run `NotFound`, `PermissionDenied`
+  or `UnrecoverableStart` on it — those take the raw output — and was left
+  matching on text this package is free to reword. `CommandError` keeps `Op`,
+  `Output` and `Err` as fields and implements `Unwrap`, so `errors.As` reaches
+  them. The rendered message is unchanged, access hint included.
+
 ### Fixed before the release
+
+- **`Locks` grew without bound.** Its `sync.Map` was only ever added to, so a
+  supervisor whose container names change over time — a job id, a timestamp —
+  accumulated one mutex per name it ever saw, for the life of the process.
+  Entries are now reference-counted and removed when the last holder releases.
+  The reference is taken before the entry's mutex, so an entry stays alive
+  while someone is waiting on it. Locking behaviour is unchanged.
 
 - `(Limits).Validate` was over gocyclo's complexity threshold (19 vs 15). The
   per-field checks are now one function each — `validateCPUs`, `validateSizes`,
@@ -70,7 +88,7 @@ not build on Windows.
   external test package going through `Runner.Exec`, so none of them needs a
   daemon and they cannot drift from the exported API.
 - CI covering formatting, vet, tests, golangci-lint and govulncheck, with the
-  test job run against Go 1.22 and the current release on Linux and macOS. The
+  test job run against Go 1.27 and the current release on Linux and macOS. The
   HTML coverage report is uploaded as a build artifact; no coverage service is
   involved.
 - A Go Report Card workflow, run on demand, that regenerates the badge and
