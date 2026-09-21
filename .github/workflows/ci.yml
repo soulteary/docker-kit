@@ -46,9 +46,17 @@ jobs:
         run: go vet ./...
 
   # Code testing
+  #
+  # Matrixed over the supported systems. The Go version comes from go.mod, the
+  # same as every other job -- there is no version pinned in this file to drift
+  # away from it.
   test:
-    name: Code Testing
-    runs-on: ubuntu-latest
+    name: Code Testing (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -61,17 +69,21 @@ jobs:
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
 
+      - name: Display coverage summary
+        run: go tool cover -func=coverage.out
+
+      # One job produces the browsable report; the artifact name has to stay
+      # unique across the matrix.
       - name: Generate coverage report
+        if: matrix.os == 'ubuntu-latest'
         run: go tool cover -html=coverage.out -o coverage.html
 
       - name: Upload coverage report
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage.html
-
-      - name: Display coverage summary
-        run: go tool cover -func=coverage.out
 
   # Code quality check (using golangci-lint)
   lint:

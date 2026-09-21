@@ -67,7 +67,7 @@ func (r Runner) Inspect(ctx context.Context, name string) (*Facts, error) {
 		if NotFound(out) {
 			return nil, nil
 		}
-		return nil, Error("docker inspect", out, err)
+		return nil, WrapError("docker inspect", out, err)
 	}
 	return ParseInspect(out)
 }
@@ -168,7 +168,9 @@ func ImageID(ctx context.Context, ref string) string { return Default.ImageID(ct
 type ImageIDCache struct {
 	// TTL is how long an entry stays fresh. Zero means DefaultImageIDTTL.
 	TTL time.Duration
-	// Runner is the runner used for lookups. The zero value uses Default.
+	// Runner is the runner used for lookups. The zero value runs `docker` on
+	// PATH -- it is the zero Runner, not the package-level Default, so a
+	// caller that replaces Default has to set this as well.
 	Runner Runner
 
 	entries sync.Map // ref -> imageIDEntry

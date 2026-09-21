@@ -32,6 +32,12 @@ if diffs := spec.Drift(facts, imageID); len(diffs) > 0 {
 go get github.com/soulteary/docker-kit
 ```
 
+The package is named `dockerkit`, not `docker-kit`, so spell the import name out:
+
+```go
+import dockerkit "github.com/soulteary/docker-kit"
+```
+
 ## One spec, both directions
 
 `Spec` is the single definition behind creating a container *and* comparing one:
@@ -80,9 +86,16 @@ Docker uses the same non-zero exit status for "it isn't there" and "I couldn't r
 | `NotFound(out)` | No such container (several locales) |
 | `PermissionDenied(out)` | Can't reach the daemon: socket permissions, or nothing listening |
 | `UnrecoverableStart(out)` | `docker start` failed for something retrying will never fix — usually a network removed by `compose down`. Delete and recreate; callers that retry will retry forever |
-| `Error(op, out, err)` | Wraps a failure **with its output**, plus the access hint when relevant |
+| `WrapError(op, out, err)` | Wraps a failure as a `*CommandError`, **carrying its output**, plus the access hint when relevant |
 
-`Error` carries the output because an error that says only `exit status 1` costs the reader a trip to the host to find out what docker actually said.
+`CommandError` keeps the output as a field rather than only folding it into the message. An error that says only `exit status 1` costs the reader a trip to the host to find out what docker actually said — and a caller that receives one usually wants to ask the classifiers above what kind of failure it was, which needs the bytes, not a sentence:
+
+```go
+var cmdErr *dockerkit.CommandError
+if errors.As(err, &cmdErr) && dockerkit.UnrecoverableStart(cmdErr.Output) {
+    // recreate the container rather than retrying the start
+}
+```
 
 ## Resource limits
 
@@ -136,7 +149,10 @@ facts, err := r.Inspect(ctx, "app")
 
 ## Requirements
 
-- **Go 1.27+** (`go.mod` declares `go 1.27.0`)
+- **Go 1.27+** (`go.mod` declares `go 1.27.0`). The kits track the current Go
+  release together, so this is a deliberate floor rather than the lowest the
+  code could run on. Note that a library's `go` directive is a hard minimum for
+  everyone who imports it: `go get` will raise your own `go.mod` to match.
 - **No dependencies.** The standard library is the whole of it, tests included.
 - **The `docker` CLI on PATH** at run time — this package drives it rather than
   speaking to the daemon's API. `Runner.Binary` points at a different
@@ -156,9 +172,10 @@ go tool cover -html=coverage.out -o coverage.html
 go tool cover -func=coverage.out
 ```
 
-Statement coverage is **92.6%**, and no test needs a docker daemon — they go
-through `Runner.Exec`. CI uploads the browsable HTML report as a build artifact
-on every run; no coverage service is involved.
+Statement coverage is **94.2%**, and no test needs a docker daemon — they go
+through `Runner.Exec`. The test job runs on Linux and macOS, on the Go version
+`go.mod` declares; the Linux job uploads the browsable HTML report as a build
+artifact. No coverage service is involved.
 
 The runnable examples in `example_test.go` are part of the suite. They are an
 *external* test package (`package dockerkit_test`), so they compile only

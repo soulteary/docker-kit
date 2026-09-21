@@ -33,8 +33,9 @@
 // [Runner] executes docker commands. The zero value runs the `docker` binary
 // on PATH, and package-level [Run], [Inspect] and [ImageID] use [Default];
 // tests substitute [Runner.Exec]. [NotFound], [PermissionDenied] and
-// [UnrecoverableStart] classify command output, and [Error] wraps a failure
-// with the output docker actually produced.
+// [UnrecoverableStart] classify command output, and [WrapError] wraps a
+// failure as a [CommandError], which keeps that output reachable so a caller
+// holding the error can still ask the classifiers what went wrong.
 //
 // [Limits] are the resource caps, validated before `docker create` sees them
 // rather than after. [Locks] serializes lifecycle operations per container,
