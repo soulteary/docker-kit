@@ -173,9 +173,9 @@ go tool cover -func=coverage.out
 ```
 
 Statement coverage is **94.2%**, and no test needs a docker daemon — they go
-through `Runner.Exec`. The test job runs on Linux and macOS, against Go 1.27
-and the current release; one of those combinations uploads the browsable HTML
-report as a build artifact. No coverage service is involved.
+through `Runner.Exec`. The test job runs on Linux and macOS, on the Go version
+`go.mod` declares; the Linux job uploads the browsable HTML report as a build
+artifact. No coverage service is involved.
 
 The runnable examples in `example_test.go` are part of the suite. They are an
 *external* test package (`package dockerkit_test`), so they compile only

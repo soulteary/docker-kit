@@ -88,9 +88,9 @@ consumer's own `go.mod` to match. `SocketGID` reads POSIX ownership through
   external test package going through `Runner.Exec`, so none of them needs a
   daemon and they cannot drift from the exported API.
 - CI covering formatting, vet, tests, golangci-lint and govulncheck, with the
-  test job run against Go 1.27 and the current release on Linux and macOS. The
-  HTML coverage report is uploaded as a build artifact; no coverage service is
-  involved.
+  test job run on Linux and macOS. Every job takes its Go version from
+  `go.mod`. The HTML coverage report is uploaded as a build artifact; no
+  coverage service is involved.
 - A Go Report Card workflow, run on demand, that regenerates the badge and
   report and commits them back.
 

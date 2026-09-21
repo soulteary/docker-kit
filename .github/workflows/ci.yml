@@ -47,16 +47,16 @@ jobs:
 
   # Code testing
   #
-  # The matrix is the oldest supported Go -- keep it in step with the `go`
-  # directive in go.mod -- and the current release, on both supported systems.
+  # Matrixed over the supported systems. The Go version comes from go.mod, the
+  # same as every other job -- there is no version pinned in this file to drift
+  # away from it.
   test:
-    name: Code Testing (${{ matrix.os }}, go ${{ matrix.go }})
+    name: Code Testing (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest ]
-        go: [ '1.27.0', 'stable' ]
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -64,7 +64,7 @@ jobs:
       - name: Set up Go environment
         uses: actions/setup-go@v7
         with:
-          go-version: ${{ matrix.go }}
+          go-version-file: 'go.mod'
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
@@ -72,14 +72,14 @@ jobs:
       - name: Display coverage summary
         run: go tool cover -func=coverage.out
 
-      # One combination produces the browsable report; the artifact name has to
-      # stay unique across the matrix.
+      # One job produces the browsable report; the artifact name has to stay
+      # unique across the matrix.
       - name: Generate coverage report
-        if: matrix.os == 'ubuntu-latest' && matrix.go == 'stable'
+        if: matrix.os == 'ubuntu-latest'
         run: go tool cover -html=coverage.out -o coverage.html
 
       - name: Upload coverage report
-        if: matrix.os == 'ubuntu-latest' && matrix.go == 'stable'
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v7
         with:
           name: coverage-report
