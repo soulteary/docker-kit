@@ -1,9 +1,6 @@
 # docker-kit
 
-[![CI](https://github.com/soulteary/docker-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/soulteary/docker-kit/actions/workflows/ci.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/soulteary/docker-kit.svg)](https://pkg.go.dev/github.com/soulteary/docker-kit)
-[![Go Report Card](.github/goreportcard.svg)](.github/goreportcard-report.md)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![CI](https://github.com/soulteary/docker-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/soulteary/docker-kit/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/soulteary/docker-kit.svg)](https://pkg.go.dev/github.com/soulteary/docker-kit) [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE) [![Go Test Coverage](./.github/coverage.svg)](./.github/go-test-report.md) [![Go Report Card](./.github/goreportcard.svg)](./.github/goreportcard-report.md)
 
 用 Go 驱动 docker CLI：执行命令、读出容器**实际**是按什么参数创建的，并报告它与当前配置之间的差异。零依赖。
 
