@@ -5,7 +5,12 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] — unreleased
+## [Unreleased]
+
+The current source requires Go 1.27.2 or newer, matching the hard minimum in
+`go.mod` and both README translations.
+
+## [1.0.0]
 
 First tagged release. From here the exported API is a compatibility promise:
 it will not change incompatibly before 2.0.0.
@@ -15,7 +20,7 @@ that motivated `Spec.Drift` was a container still mounting the host's docker
 socket long after the setting was changed to stop it: the isolation the edit
 was meant to achieve never happened, and everything looked fine.
 
-**Requires Go 1.27 or newer, the `docker` CLI on PATH at run time, and Unix.**
+**The v1.0.0 tag requires Go 1.27.0 or newer, the `docker` CLI on PATH at run time, and Unix.**
 The kits track the current Go release together. Note that a library's `go`
 directive is a hard minimum for everyone who imports it: `go get` raises the
 consumer's own `go.mod` to match. `SocketGID` reads POSIX ownership through
