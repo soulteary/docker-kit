@@ -157,7 +157,7 @@ jobs:
       run: cp .github/test-results/coverage.out coverage.out
     - name: Generate HTML coverage report
       if: matrix.os == 'ubuntu-latest'
-      run: go tool cover -html=coverage.out -o coverage.html
+      run: GOTOOLCHAIN=auto go tool cover -html=coverage.out -o coverage.html
     - name: Upload HTML coverage report
       if: matrix.os == 'ubuntu-latest'
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
